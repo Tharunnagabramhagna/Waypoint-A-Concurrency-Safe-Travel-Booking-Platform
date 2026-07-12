@@ -1,0 +1,216 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Font Loading ──────────────────────────────────────────────────────
+   Display: General Sans (Fontshare — free, distinctive)
+   Body:    Inter (Google Fonts — highly legible)
+   Mono:    IBM Plex Mono (Google Fonts — reserved for codes/refs only)
+   ───────────────────────────────────────────────────────────────────── */
+@import url('https://api.fontshare.com/v2/css?f[]=general-sans@500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Base reset ───────────────────────────────────────────────────── */
+* {
+  @apply antialiased;
+}
+
+body {
+  @apply bg-gradient-to-br from-[#FAF9F5] via-paper to-[#E8E4D8] min-h-screen text-ink font-body selection:bg-route/30;
+  background-attachment: fixed;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* ── Heading defaults ─────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  @apply font-display text-ink;
+}
+
+h1 {
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+/* ── Typography Utilities ─────────────────────────────────────────── */
+@layer utilities {
+  .text-hero {
+    font-size: 3.5rem;
+    line-height: 1.08;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+  .text-hero-lg {
+    font-size: 4.5rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+  .text-section {
+    font-size: 2rem;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  .text-section-lg {
+    font-size: 2.5rem;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  .text-card-title {
+    font-size: 1.25rem;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    font-weight: 700;
+  }
+  .text-body {
+    font-size: 0.9375rem;
+    line-height: 1.65;
+  }
+  .text-body-sm {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+  }
+  .text-meta {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  .text-micro {
+    font-size: 0.6875rem;
+    line-height: 1.45;
+    font-weight: 500;
+  }
+  .text-label {
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+}
+
+/* ── Glass card — Apple Liquid Glass ─────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 30px rgba(18, 23, 42, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.glass-dark {
+  background: rgba(18, 23, 42, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* ── Ticket stub ─────────────────────────────────────────────────── */
+.ticket-stub {
+  @apply glass rounded-[2rem] p-8;
+  position: relative;
+}
+.ticket-stub::before,
+.ticket-stub::after {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background: #F1EEE5;
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.ticket-stub::before {
+  left: -12px;
+  box-shadow: inset -3px 0 5px rgba(18, 23, 42, 0.02);
+}
+.ticket-stub::after {
+  right: -12px;
+  box-shadow: inset 3px 0 5px rgba(18, 23, 42, 0.02);
+}
+
+.ticket-perforation {
+  border-left: 2px dashed rgba(18, 23, 42, 0.15);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.btn-primary {
+  @apply bg-route text-white font-semibold py-3 px-6 rounded-2xl shadow-sm
+         hover:bg-route-dark hover:shadow-md hover:-translate-y-[1px]
+         active:scale-[0.98] transition-all duration-200 cursor-pointer
+         text-body-sm tracking-normal;
+}
+
+.btn-secondary {
+  @apply glass text-ink font-semibold py-3 px-6 rounded-2xl
+         hover:bg-white/60 hover:-translate-y-[1px]
+         active:scale-[0.98] transition-all duration-200 cursor-pointer
+         text-body-sm tracking-normal;
+}
+
+.btn-signal {
+  @apply bg-signal text-white font-semibold py-3 px-6 rounded-2xl shadow-sm
+         hover:bg-amber-600 hover:shadow-md hover:-translate-y-[1px]
+         active:scale-[0.98] transition-all duration-200 cursor-pointer
+         text-body-sm tracking-normal;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────── */
+.input-glass {
+  @apply w-full glass px-4 py-3 rounded-2xl text-ink text-body-sm
+         placeholder-ink/40 focus:outline-none focus:ring-2
+         focus:ring-route/30 focus:border-route/50 transition-all duration-300;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #F1EEE5; }
+::-webkit-scrollbar-thumb { background: rgba(47, 111, 94, 0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(47, 111, 94, 0.5); }
+
+/* ── Animations ──────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-fade-up {
+  animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
