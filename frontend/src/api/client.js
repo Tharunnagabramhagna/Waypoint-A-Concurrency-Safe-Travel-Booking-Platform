@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+
+if (!API_BASE) {
+  throw new Error('VITE_API_BASE_URL is required');
+}
+
 const API_URL = API_BASE.includes('/api/v1') ? API_BASE : `${API_BASE.replace(/\/$/, '')}/api/v1`;
 
 let csrfToken = null;
