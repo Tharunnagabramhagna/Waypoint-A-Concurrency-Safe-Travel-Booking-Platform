@@ -32,6 +32,9 @@ if (isProduction) {
 
 const app = express();
 
+// Trust proxy for secure cookies and accurate client IP logging behind Render reverse proxy
+app.set('trust proxy', 1);
+
 // Request ID middleware
 app.use((req, res, next) => {
   req.id = randomUUID();
@@ -44,6 +47,19 @@ app.use(pinoHttp({
   genReqId: (req) => req.id,
 }));
 
+const corsOriginsEnv = process.env.CORS_ORIGIN || '';
+const allowedOrigins = corsOriginsEnv
+  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : [];
+
+// Dynamic connectSrc origins for Helmet CSP
+const helmetConnectSrc = ["'self'", "http://localhost:5173", "https://*.vercel.app"];
+allowedOrigins.forEach((origin) => {
+  if (origin !== '*') {
+    helmetConnectSrc.push(origin);
+  }
+});
+
 // Security headers with Helmet
 app.use(helmet({
   contentSecurityPolicy: {
@@ -52,23 +68,38 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || "*"],
+      connectSrc: helmetConnectSrc,
     },
   },
 }));
 
-// CORS with credentials
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : undefined;
-app.use(cors({
-  origin: allowedOrigins || true,
+// CORS with credentials and environment-driven origin matching
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. tool fetches, curl, postman, server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const isExactMatch = allowedOrigins.includes(origin) || origin === 'http://localhost:5173';
+    const isVercelPreview = origin.startsWith('https://') && origin.endsWith('.vercel.app');
+
+    if (isExactMatch || isVercelPreview) {
+      callback(null, true);
+    } else {
+      logger.warn(`CORS blocked for origin: ${origin}`);
+      callback(new Error(`Not allowed by CORS: ${origin}`));
+    }
+  },
   credentials: true,
-}));
+};
+app.use(cors(corsOptions));
 
 // Parse cookies and JSON bodies
 app.use(cookieParser());
 app.use(express.json());
+
+const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
 // CSRF Protection
 const {
@@ -81,8 +112,8 @@ const {
   cookieName: 'csrf-token',
   cookieOptions: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: isProdOrRender,
+    sameSite: isProdOrRender ? 'none' : 'lax',
     path: '/',
   },
   size: 64,

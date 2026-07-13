@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = API_BASE.includes('/api/v1') ? API_BASE : `${API_BASE.replace(/\/$/, '')}/api/v1`;
 
 let csrfToken = null;
 
@@ -50,6 +51,14 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
   };
 
   let res = await makeRequest();
+
+  // If 403 (could be invalid/expired CSRF token), try fetching new CSRF token and retrying once
+  if (res.status === 403 && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    csrfToken = null;
+    const token = await getCsrfToken();
+    headers['X-CSRF-Token'] = token;
+    res = await makeRequest();
+  }
 
   // If 401, try to refresh token once
   if (res.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
