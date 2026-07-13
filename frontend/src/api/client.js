@@ -1,5 +1,4 @@
-const DEFAULT_API_BASE_URL = 'https://waypoint-backend-ahsd.onrender.com';
-const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const API_URL = API_BASE.includes('/api/v1') ? API_BASE : `${API_BASE.replace(/\/$/, '')}/api/v1`;
 
 let csrfToken = null;
