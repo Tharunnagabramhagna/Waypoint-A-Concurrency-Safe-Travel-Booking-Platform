@@ -11,7 +11,10 @@ export function errorHandler(err, req, res, next) {
     return res.status(err.statusCode).json({ error: err.message, code: err.code });
   }
   // CSRF validation error handling
-  if (err.code === 'EBADCSRFTOKEN') {
+  if (
+    err.code === 'EBADCSRFTOKEN' ||
+    ((err.status === 403 || err.statusCode === 403) && /csrf/i.test(err.message || ''))
+  ) {
     return res.status(403).json({ error: 'Invalid or missing CSRF token', code: 'INVALID_CSRF' });
   }
   // Postgres unique_violation -> surfaces as a 409, not a 500.

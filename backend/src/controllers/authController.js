@@ -6,17 +6,22 @@ import { pool, withTransaction } from '../db/pool.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../lib/logger.js';
 
+const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase());
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(128, 'Password must be 128 characters or fewer');
+
 const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  fullName: z.string().min(1),
-  phone: z.string().optional(),
+  email: emailSchema,
+  password: passwordSchema,
+  fullName: z.string().trim().min(1).max(120),
+  phone: z.string().trim().max(32).optional(),
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
-  deviceInfo: z.string().optional(),
+  email: emailSchema,
+  password: z.string().min(1).max(128),
+  deviceInfo: z.string().trim().max(255).optional(),
 });
 
 function generateRefreshToken() {
@@ -85,7 +90,7 @@ export async function register(req, res, next) {
         `INSERT INTO users (email, password_hash, full_name, phone)
          VALUES ($1, $2, $3, $4)
          RETURNING id, email, full_name, role, created_at`,
-        [data.email.toLowerCase(), passwordHash, data.fullName, data.phone || null]
+        [data.email, passwordHash, data.fullName, data.phone || null]
       );
       return rows[0];
     });
@@ -118,7 +123,7 @@ export async function register(req, res, next) {
 export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
-    const { rows } = await pool.query(`SELECT * FROM users WHERE email = $1`, [data.email.toLowerCase()]);
+    const { rows } = await pool.query(`SELECT * FROM users WHERE email = $1`, [data.email]);
     const user = rows[0];
     if (!user) throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
 
@@ -160,7 +165,16 @@ export async function refresh(req, res, next) {
 
     // Find valid refresh token in DB (not expired, not revoked)
     const { rows } = await pool.query(
-      `SELECT rt.*, u.id, u.email, u.full_name, u.role 
+      `SELECT rt.id AS refresh_token_id,
+              rt.token_hash,
+              rt.device_info,
+              rt.expires_at,
+              rt.revoked_at,
+              rt.created_at AS refresh_token_created_at,
+              u.id AS user_id,
+              u.email,
+              u.full_name,
+              u.role
        FROM refresh_tokens rt 
        JOIN users u ON rt.user_id = u.id 
        WHERE rt.expires_at > NOW() AND rt.revoked_at IS NULL
@@ -174,7 +188,7 @@ export async function refresh(req, res, next) {
       const match = await bcrypt.compare(refreshToken, row.token_hash);
       if (match) {
         validToken = row;
-        user = { id: row.id, email: row.email, fullName: row.full_name, role: row.role };
+        user = { id: row.user_id, email: row.email, fullName: row.full_name, role: row.role };
         break;
       }
     }
@@ -187,7 +201,7 @@ export async function refresh(req, res, next) {
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`,
-        [validToken.id]
+        [validToken.refresh_token_id]
       );
 
       const newAccessToken = signAccessToken(user);
