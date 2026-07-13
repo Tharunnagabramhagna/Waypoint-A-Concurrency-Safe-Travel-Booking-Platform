@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "citext";
 
 -- ---------- USERS ----------
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email          CITEXT UNIQUE NOT NULL,
   password_hash  TEXT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE users (
 );
 
 -- ---------- PROVIDERS (airline / hotel chain / bus operator) ----------
-CREATE TABLE providers (
+CREATE TABLE IF NOT EXISTS providers (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name         TEXT NOT NULL,
   type         TEXT NOT NULL CHECK (type IN ('flight','hotel','bus')),
@@ -32,7 +32,7 @@ CREATE TABLE providers (
 --   flight  = one scheduled flight (origin/dest/departure/arrival)
 --   hotel   = one room-type at a property, sold per night
 --   bus     = one scheduled bus route/departure
-CREATE TABLE listings (
+CREATE TABLE IF NOT EXISTS listings (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   provider_id     UUID NOT NULL REFERENCES providers(id),
   type            TEXT NOT NULL CHECK (type IN ('flight','hotel','bus')),
@@ -50,8 +50,8 @@ CREATE TABLE listings (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_listings_search ON listings (type, origin, destination, departure_time);
-CREATE INDEX idx_listings_hotel_city ON listings (type, city) WHERE type = 'hotel';
+CREATE INDEX IF NOT EXISTS idx_listings_search ON listings (type, origin, destination, departure_time);
+CREATE INDEX IF NOT EXISTS idx_listings_hotel_city ON listings (type, city) WHERE type = 'hotel';
 
 -- ---------- INVENTORY UNITS ----------
 -- The sellable unit under a listing:
@@ -60,7 +60,7 @@ CREATE INDEX idx_listings_hotel_city ON listings (type, city) WHERE type = 'hote
 --   hotel  -> a room, for a specific stay-night (one row per room per night)
 --   bus    -> a seat
 -- `version` implements optimistic locking on top of row locks (belt & suspenders).
-CREATE TABLE inventory_units (
+CREATE TABLE IF NOT EXISTS inventory_units (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   listing_id    UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   unit_code     TEXT NOT NULL,           -- e.g. "12A" seat, "Room 304", "Night 2026-08-01"
@@ -72,14 +72,14 @@ CREATE TABLE inventory_units (
   UNIQUE (listing_id, unit_code, stay_date)
 );
 
-CREATE INDEX idx_inventory_listing_status ON inventory_units (listing_id, status);
+CREATE INDEX IF NOT EXISTS idx_inventory_listing_status ON inventory_units (listing_id, status);
 -- Partial index makes the hot-path "find available units for listing" query cheap.
-CREATE INDEX idx_inventory_available ON inventory_units (listing_id) WHERE status = 'available';
+CREATE INDEX IF NOT EXISTS idx_inventory_available ON inventory_units (listing_id) WHERE status = 'available';
 
 -- ---------- BOOKINGS ----------
 -- One booking can span multiple inventory_units (e.g. 3 seats on one flight,
 -- or a multi-night hotel stay = N nightly rows).
-CREATE TABLE bookings (
+CREATE TABLE IF NOT EXISTS bookings (
   id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id          UUID NOT NULL REFERENCES users(id),
   status           TEXT NOT NULL DEFAULT 'pending_payment'
@@ -92,7 +92,7 @@ CREATE TABLE bookings (
   expires_at       TIMESTAMPTZ           -- pending bookings auto-expire if unpaid
 );
 
-CREATE TABLE booking_items (
+CREATE TABLE IF NOT EXISTS booking_items (
   id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   booking_id         UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
   inventory_unit_id  UUID NOT NULL REFERENCES inventory_units(id),
@@ -102,7 +102,7 @@ CREATE TABLE booking_items (
 );
 
 -- ---------- PAYMENTS (mocked gateway) ----------
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   booking_id       UUID NOT NULL REFERENCES bookings(id),
   amount_cents     INTEGER NOT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE payments (
 );
 
 -- ---------- AUDIT / OUTBOX (for saga-style consistency, see SYSTEM_DESIGN.md) ----------
-CREATE TABLE booking_events (
+CREATE TABLE IF NOT EXISTS booking_events (
   id           BIGSERIAL PRIMARY KEY,
   booking_id   UUID NOT NULL REFERENCES bookings(id),
   event_type   TEXT NOT NULL,   -- HOLD_CREATED, HOLD_EXPIRED, PAYMENT_CAPTURED, BOOKING_CONFIRMED, ...
@@ -122,10 +122,10 @@ CREATE TABLE booking_events (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_booking_events_booking ON booking_events (booking_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_booking_events_booking ON booking_events (booking_id, created_at);
 
 -- ---------- REFRESH TOKENS (for secure auth) ----------
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash   TEXT NOT NULL UNIQUE, -- store hash of refresh token (never plaintext)
@@ -135,10 +135,10 @@ CREATE TABLE refresh_tokens (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens (user_id, created_at);
 
 -- ---------- ROUTE WAYPOINTS (for tracking/simulation) ----------
-CREATE TABLE route_waypoints (
+CREATE TABLE IF NOT EXISTS route_waypoints (
   id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   listing_id          UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   sequence_order      INTEGER NOT NULL,
@@ -150,7 +150,7 @@ CREATE TABLE route_waypoints (
 );
 
 -- ---------- VEHICLE POSITION LOG (audit / playback) ----------
-CREATE TABLE vehicle_position_log (
+CREATE TABLE IF NOT EXISTS vehicle_position_log (
   id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   listing_id         UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   recorded_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -161,5 +161,5 @@ CREATE TABLE vehicle_position_log (
   source             TEXT NOT NULL CHECK (source IN ('simulated','live'))
 );
 
-CREATE INDEX idx_vehicle_position_log_listing_time ON vehicle_position_log (listing_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_vehicle_position_log_listing_time ON vehicle_position_log (listing_id, recorded_at);
 
