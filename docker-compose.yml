@@ -48,7 +48,7 @@ services:
       JWT_REFRESH_EXPIRES_IN: 7d
       HOLD_TTL_SECONDS: 600
       CORS_ORIGIN: http://localhost:5173
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       CSRF_SECRET: change_this_csrf_secret_too
       NODE_ENV: production
     ports:

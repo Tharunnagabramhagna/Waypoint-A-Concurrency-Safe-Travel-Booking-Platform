@@ -97,8 +97,7 @@ CREATE TABLE IF NOT EXISTS booking_items (
   booking_id         UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
   inventory_unit_id  UUID NOT NULL REFERENCES inventory_units(id),
   listing_id         UUID NOT NULL REFERENCES listings(id),
-  price_cents        INTEGER NOT NULL,
-  UNIQUE (inventory_unit_id)   -- an inventory unit can only ever belong to ONE active booking item
+  price_cents        INTEGER NOT NULL
 );
 
 -- ---------- PAYMENTS (mocked gateway) ----------

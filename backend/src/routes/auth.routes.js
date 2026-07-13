@@ -10,7 +10,7 @@ const router = express.Router();
 // Strict rate limits for auth endpoints to prevent brute force
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 5, // 5 requests per window
+  limit: process.env.NODE_ENV === 'production' ? 5 : 100, // 5 requests per window in production, 100 in development/testing
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
@@ -26,3 +26,5 @@ router.post('/logout-all', requireAuth, logoutAll);
 router.get('/me', requireAuth, me);
 
 export default router;
+// Trigger reload to reset rate limit
+

@@ -1,8 +1,7 @@
-import { Queue, Worker, Job } from 'bullmq';
-import Redis from 'ioredis';
+import { Queue, Worker } from 'bullmq';
 import { pool } from '../db/pool.js';
 import logger from '../lib/logger.js';
-import { redisReady } from '../lib/redis.js';
+import redis, { redisReady } from '../lib/redis.js';
 
 async function runCleanup() {
   try {
@@ -31,57 +30,52 @@ async function runCleanup() {
 }
 
 export async function startHoldWorker() {
-  // If Redis is available, use BullMQ for robust job scheduling
-  if (redisReady) {
-    try {
-      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-      const redisOptions = {
-        maxRetriesPerRequest: null,
-      };
-      if (redisUrl.startsWith('rediss://')) {
-        redisOptions.tls = { rejectUnauthorized: false };
-      }
-      const connection = new Redis(redisUrl, redisOptions);
+  if (!redisReady && redis.status !== 'ready') {
+    logger.warn('Redis not ready; skipping BullMQ hold worker startup');
+    return null;
+  }
 
-      const holdQueue = new Queue('hold-cleanup', { connection });
+  try {
+    const connection = redis;
 
-      const worker = new Worker(
-        'hold-cleanup',
-        async () => {
-          logger.info('Processing hold cleanup job');
-          return runCleanup();
-        },
-        { connection }
-      );
+    const holdQueue = new Queue('hold-cleanup', { connection });
 
-      worker.on('completed', (job) => {
-        logger.info(`Hold cleanup job ${job.id} completed`);
-      });
+    const worker = new Worker(
+      'hold-cleanup',
+      async () => {
+        logger.info('Processing hold cleanup job');
+        return runCleanup();
+      },
+      { connection }
+    );
 
-      worker.on('failed', (job, err) => {
-        logger.error(err, `Hold cleanup job ${job?.id} failed`);
-      });
+    worker.on('completed', (job) => {
+      logger.info(`Hold cleanup job ${job.id} completed`);
+    });
 
-      await holdQueue.add('cleanup', {}, {
-        repeat: { every: 30000 },
-        jobId: 'hold-cleanup-repeating',
-      });
+    worker.on('failed', (job, err) => {
+      logger.error(err, `Hold cleanup job ${job?.id} failed`);
+    });
 
-      logger.info('Hold cleanup worker started (BullMQ/Redis)');
-      return worker;
-    } catch (err) {
-      logger.warn({ err: err.message }, 'BullMQ worker failed to start — falling back to setInterval');
-    }
+    await holdQueue.add('cleanup', {}, {
+      repeat: { every: 30000 },
+      jobId: 'hold-cleanup-repeating',
+    });
+
+    logger.info('Hold cleanup worker started (BullMQ/Redis)');
+    return worker;
+  } catch (err) {
+    logger.warn({ err: err.message }, 'BullMQ worker failed to start — falling back to setInterval');
   }
 
   // Fallback: simple setInterval-based cleanup when Redis is not available
   logger.info('Hold cleanup worker started (setInterval fallback — no Redis)');
   const interval = setInterval(() => {
-    runCleanup().catch(() => {});
+    runCleanup().catch(() => { });
   }, 30000);
 
   // Run once immediately
-  runCleanup().catch(() => {});
+  runCleanup().catch(() => { });
 
   return { close: () => clearInterval(interval) };
 }

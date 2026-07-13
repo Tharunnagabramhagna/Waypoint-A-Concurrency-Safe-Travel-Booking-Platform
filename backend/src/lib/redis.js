@@ -6,27 +6,104 @@ dotenv.config();
 /** Whether Redis connected successfully and is usable. */
 export let redisReady = false;
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const redisOptions = {
-  maxRetriesPerRequest: 0,   // fail fast instead of buffering commands
-  enableReadyCheck: false,   // don't run internal INFO ready checks
-  enableOfflineQueue: false, // don't buffer commands when offline
-  lazyConnect: true,         // don't block module load on connect
-  retryStrategy(times) {
-    // Give up after 3 connection attempts — let the server start without Redis
-    if (times > 3) {
-      console.warn('[Redis] Could not connect after 3 attempts — running without Redis (in-memory fallbacks)');
-      return null;  // stop retrying
-    }
-    return Math.min(times * 200, 1000);
-  },
-};
+function normalizeRedisUrl(redisUrl) {
+  if (!redisUrl) {
+    return redisUrl;
+  }
 
-if (redisUrl.startsWith('rediss://')) {
-  redisOptions.tls = { rejectUnauthorized: false };
+  try {
+    const parsed = new URL(redisUrl);
+    const shouldUseTls = parsed.protocol === 'rediss:' || process.env.REDIS_TLS === 'true' || process.env.REDIS_TLS === '1' || parsed.hostname.includes('upstash') || parsed.hostname.includes('redis') && parsed.hostname.includes('cloud');
+
+    if (shouldUseTls && parsed.protocol === 'redis:') {
+      parsed.protocol = 'rediss:';
+    }
+
+    return parsed.toString();
+  } catch {
+    return redisUrl;
+  }
 }
 
-const redis = new Redis(redisUrl, redisOptions);
+function buildRedisOptions(redisUrl) {
+  const normalizedUrl = normalizeRedisUrl(redisUrl);
+  const redisOptions = {
+    maxRetriesPerRequest: 0,   // fail fast instead of buffering commands
+    enableReadyCheck: false,   // don't run internal INFO ready checks
+    enableOfflineQueue: false, // don't buffer commands when offline
+    lazyConnect: true,         // don't block module load on connect
+    retryStrategy(times) {
+      // Give up after 3 connection attempts — let the server start without Redis
+      if (times > 3) {
+        console.warn('[Redis] Could not connect after 3 attempts — running without Redis (in-memory fallbacks)');
+        return null;  // stop retrying
+      }
+      return Math.min(times * 200, 1000);
+    },
+  };
+
+  if (normalizedUrl?.startsWith('rediss://') || process.env.REDIS_TLS === 'true' || process.env.REDIS_TLS === '1') {
+    redisOptions.tls = { rejectUnauthorized: false };
+  }
+
+  if (process.env.REDIS_USERNAME) {
+    redisOptions.username = process.env.REDIS_USERNAME;
+  }
+
+  if (process.env.REDIS_PASSWORD && !normalizedUrl?.includes('@')) {
+    redisOptions.password = process.env.REDIS_PASSWORD;
+  }
+
+  return redisOptions;
+}
+
+export function createRedisConnection(redisUrl = process.env.REDIS_URL || process.env.UPSTASH_REDIS_URL) {
+  const normalizedUrl = normalizeRedisUrl(redisUrl);
+  return new Redis(normalizedUrl, buildRedisOptions(normalizedUrl));
+}
+
+const redis = createRedisConnection();
+
+export function waitForRedis(timeoutMs = 5000) {
+  if (redis.status === 'ready') {
+    return Promise.resolve(true);
+  }
+
+  if (redis.status === 'connecting' || redis.status === 'connect') {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        redis.off('ready', onReady);
+        redis.off('error', onError);
+        redis.off('close', onClose);
+      };
+
+      const onReady = () => {
+        cleanup();
+        resolve(true);
+      };
+      const onError = () => {
+        cleanup();
+        resolve(false);
+      };
+      const onClose = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      redis.once('ready', onReady);
+      redis.once('error', onError);
+      redis.once('close', onClose);
+    });
+  }
+
+  return Promise.resolve(false);
+}
 
 redis.on('error', (err) => {
   if (redisReady) {
@@ -40,11 +117,6 @@ redis.on('ready', () => {
   console.log('[Redis] Connected successfully');
 });
 
-redis.on('connect', () => {
-  // If enableReadyCheck is false, ready is emitted shortly after connect.
-  // We can treat ready or connect as the indicator, but ready is safer.
-});
-
 redis.on('close', () => {
   redisReady = false;
 });
@@ -53,6 +125,8 @@ redis.on('close', () => {
 redis.connect().catch(() => {
   console.warn('[Redis] Not available — cache and rate limiting will use in-memory fallbacks');
 });
+
+await waitForRedis(3000);
 
 /**
  * Resilient wrapper around redis.call() specifically for rate-limit-redis.

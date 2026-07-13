@@ -8,7 +8,7 @@ import { doubleCsrf } from 'csrf-csrf';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import RedisStore from 'rate-limit-redis';
-import redis, { safeSendCommand } from './lib/redis.js';
+import { safeSendCommand } from './lib/redis.js';
 
 import authRoutes from './routes/auth.routes.js';
 import listingsRoutes from './routes/listings.routes.js';
@@ -19,6 +19,16 @@ import { startHoldWorker } from './queues/holdQueue.js';
 import logger from './lib/logger.js';
 
 dotenv.config();
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction) {
+  for (const key of ['DATABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'CSRF_SECRET', 'REDIS_URL', 'UPSTASH_REDIS_URL']) {
+    if (!process.env[key]) {
+      throw new Error(`Missing required environment variable: ${key}`);
+    }
+  }
+}
 
 const app = express();
 
@@ -48,9 +58,12 @@ app.use(helmet({
 }));
 
 // CORS with credentials
-app.use(cors({ 
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true 
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : undefined;
+app.use(cors({
+  origin: allowedOrigins || true,
+  credentials: true,
 }));
 
 // Parse cookies and JSON bodies
@@ -58,12 +71,12 @@ app.use(cookieParser());
 app.use(express.json());
 
 // CSRF Protection
-const { 
-  generateCsrfToken, 
-  doubleCsrfProtection, 
-  invalidCsrfTokenError 
+const {
+  generateCsrfToken,
+  doubleCsrfProtection,
+  invalidCsrfTokenError
 } = doubleCsrf({
-  getSecret: () => process.env.CSRF_SECRET || 'fallback-secret-change-in-production',
+  getSecret: () => process.env.CSRF_SECRET || (isProduction ? '' : 'fallback-secret-change-in-production'),
   getSessionIdentifier: (req) => req.cookies['access-token'] || '',
   cookieName: 'csrf-token',
   cookieOptions: {
@@ -79,7 +92,7 @@ const {
 // Generic rate limit for all API traffic.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: isProduction ? 120 : 500,
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
@@ -90,9 +103,9 @@ app.use(apiLimiter);
 
 // Tighter limit specifically on booking/payment endpoints — these are the
 // ones a scalper bot or retry-storm would hammer during a high-demand sale.
-const bookingLimiter = rateLimit({ 
-  windowMs: 60 * 1000, 
-  limit: 20,
+const bookingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: isProduction ? 20 : 100,
   store: new RedisStore({
     sendCommand: (...args) => safeSendCommand(...args),
   }),
@@ -131,8 +144,12 @@ app.use('/api/payments', bookingLimiter, paymentsRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, async () => {
+const PORT = Number(process.env.PORT);
+if (!Number.isInteger(PORT) || PORT <= 0) {
+  throw new Error('PORT environment variable must be set');
+}
+
+app.listen(PORT, '0.0.0.0', async () => {
   logger.info(`Travel booking API listening on :${PORT}`);
   await startHoldWorker();
 });
