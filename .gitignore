@@ -3,17 +3,21 @@ node_modules/
 **/node_modules/
 
 # Build output
-/dist/
-/build/
-/.vite/
-/.next/
-/.nuxt/
-/.cache/
+dist/
+build/
+.vite/
+.next/
+.nuxt/
+.cache/
 coverage/
 *.tsbuildinfo
 
 # Environment files
 .env
+.env.local
+.env.development
+.env.test
+.env.production
 .env.*
 !.env.example
 !.env.sample

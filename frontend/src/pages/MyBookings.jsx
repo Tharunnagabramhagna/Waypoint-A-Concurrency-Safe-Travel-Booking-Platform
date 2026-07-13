@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../api/client.js';
 
@@ -98,13 +99,21 @@ export default function MyBookings() {
                   {formatMoney(b.total_amount_cents, b.currency)}
                 </p>
                 {b.status === 'confirmed' && (
-                  <button
-                    onClick={() => cancel(b.id)}
-                    disabled={cancelling === b.id}
-                    className="mt-3 text-sm text-red-500 hover:text-red-600 font-semibold disabled:opacity-50"
-                  >
-                    {cancelling === b.id ? 'Cancelling...' : 'Cancel Booking'}
-                  </button>
+                  <div className="flex flex-col gap-2 mt-3">
+                    <Link
+                      to={`/tracking/${b.id}`}
+                      className="text-sm text-route hover:text-route-dark font-semibold transition-colors"
+                    >
+                      📍 Track Trip
+                    </Link>
+                    <button
+                      onClick={() => cancel(b.id)}
+                      disabled={cancelling === b.id}
+                      className="text-sm text-red-500 hover:text-red-600 font-semibold disabled:opacity-50"
+                    >
+                      {cancelling === b.id ? 'Cancelling...' : 'Cancel Booking'}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

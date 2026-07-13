@@ -4,7 +4,7 @@ let csrfToken = null;
 
 async function getCsrfToken() {
   if (!csrfToken) {
-    const res = await fetch('http://localhost:4000/api/csrf-token', { credentials: 'include' });
+    const res = await fetch(`${API_URL}/csrf-token`, { credentials: 'include' });
     const data = await res.json();
     csrfToken = data.csrfToken;
   }
@@ -75,6 +75,12 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
     err.payload = data;
     throw err;
   }
+
+  // Clear CSRF token cache when session changes
+  if (path === '/auth/login' || path === '/auth/register' || path === '/auth/logout' || path === '/auth/logout-all') {
+    csrfToken = null;
+  }
+
   return data;
 }
 
@@ -101,6 +107,10 @@ export const api = {
       body: { bookingId, idempotencyKey, cardNumberLast4 },
       headers: { 'Idempotency-Key': idempotencyKey },
     }),
+
+  getTracking: (bookingId) => request(`/bookings/${bookingId}/tracking`),
+
+  mapOverview: () => request('/listings/map-overview'),
 };
 
 export function newIdempotencyKey() {

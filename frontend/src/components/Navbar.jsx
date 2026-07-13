@@ -47,6 +47,7 @@ export default function Navbar() {
 
   const navLinks = [
     { name: 'Home', path: '/', active: isActive('/') },
+    { name: 'Explore', path: '/explore', active: isActive('/explore') },
     { name: 'About', path: '/about', active: isActive('/about') },
     { name: 'Services', path: '/services', active: isActive('/services') },
     { name: 'Contact', path: '/contact', active: isActive('/contact') },

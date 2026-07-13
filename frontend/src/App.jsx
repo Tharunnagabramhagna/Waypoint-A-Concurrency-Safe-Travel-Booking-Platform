@@ -6,6 +6,8 @@ import SearchResults from './pages/SearchResults.jsx';
 import ListingDetail from './pages/ListingDetail.jsx';
 import Checkout from './pages/Checkout.jsx';
 import MyBookings from './pages/MyBookings.jsx';
+import TrackingPage from './pages/TrackingPage.jsx';
+import ExplorePage from './pages/ExplorePage.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import About from './pages/About.jsx';
@@ -23,6 +25,8 @@ export default function App() {
           <Route path="/listings/:id" element={<ListingDetail />} />
           <Route path="/checkout/:bookingId" element={<Checkout />} />
           <Route path="/bookings" element={<MyBookings />} />
+          <Route path="/tracking/:bookingId" element={<TrackingPage />} />
+          <Route path="/explore" element={<ExplorePage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/about" element={<About />} />

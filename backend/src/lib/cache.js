@@ -1,9 +1,10 @@
-import redis from './redis.js';
+import redis, { redisReady } from './redis.js';
 import logger from './logger.js';
 
 const DEFAULT_TTL = 300; // 5 minutes
 
 export async function get(key) {
+  if (!redisReady) return null;
   try {
     const data = await redis.get(key);
     if (data) {
@@ -17,6 +18,7 @@ export async function get(key) {
 }
 
 export async function set(key, value, ttl = DEFAULT_TTL) {
+  if (!redisReady) return;
   try {
     await redis.setex(key, ttl, JSON.stringify(value));
   } catch (err) {
@@ -25,6 +27,7 @@ export async function set(key, value, ttl = DEFAULT_TTL) {
 }
 
 export async function del(key) {
+  if (!redisReady) return;
   try {
     await redis.del(key);
   } catch (err) {
@@ -33,6 +36,7 @@ export async function del(key) {
 }
 
 export async function delPattern(pattern) {
+  if (!redisReady) return;
   try {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) {
@@ -59,3 +63,4 @@ export async function wrap(key, fn, ttl = DEFAULT_TTL) {
     return fn();
   }
 }
+

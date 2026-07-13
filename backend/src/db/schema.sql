@@ -136,3 +136,30 @@ CREATE TABLE refresh_tokens (
 );
 
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id, created_at);
+
+-- ---------- ROUTE WAYPOINTS (for tracking/simulation) ----------
+CREATE TABLE route_waypoints (
+  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  listing_id          UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  sequence_order      INTEGER NOT NULL,
+  lat                 DOUBLE PRECISION NOT NULL,
+  lng                 DOUBLE PRECISION NOT NULL,
+  stop_name           TEXT,
+  distance_from_start_km DOUBLE PRECISION NOT NULL,
+  UNIQUE (listing_id, sequence_order)
+);
+
+-- ---------- VEHICLE POSITION LOG (audit / playback) ----------
+CREATE TABLE vehicle_position_log (
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  listing_id         UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  recorded_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lat                DOUBLE PRECISION NOT NULL,
+  lng                DOUBLE PRECISION NOT NULL,
+  heading_degrees    DOUBLE PRECISION NOT NULL,
+  speed_kmh          DOUBLE PRECISION NOT NULL,
+  source             TEXT NOT NULL CHECK (source IN ('simulated','live'))
+);
+
+CREATE INDEX idx_vehicle_position_log_listing_time ON vehicle_position_log (listing_id, recorded_at);
+

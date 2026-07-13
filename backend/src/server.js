@@ -8,7 +8,7 @@ import { doubleCsrf } from 'csrf-csrf';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import RedisStore from 'rate-limit-redis';
-import redis from './lib/redis.js';
+import redis, { safeSendCommand } from './lib/redis.js';
 
 import authRoutes from './routes/auth.routes.js';
 import listingsRoutes from './routes/listings.routes.js';
@@ -64,11 +64,12 @@ const {
   invalidCsrfTokenError 
 } = doubleCsrf({
   getSecret: () => process.env.CSRF_SECRET || 'fallback-secret-change-in-production',
+  getSessionIdentifier: (req) => req.cookies['access-token'] || '',
   cookieName: 'csrf-token',
   cookieOptions: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
   },
   size: 64,
@@ -82,7 +83,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
-    sendCommand: (...args) => redis.call(...args),
+    sendCommand: (...args) => safeSendCommand(...args),
   }),
 });
 app.use(apiLimiter);
@@ -93,7 +94,7 @@ const bookingLimiter = rateLimit({
   windowMs: 60 * 1000, 
   limit: 20,
   store: new RedisStore({
-    sendCommand: (...args) => redis.call(...args),
+    sendCommand: (...args) => safeSendCommand(...args),
   }),
 });
 

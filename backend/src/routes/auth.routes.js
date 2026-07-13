@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { register, login, me, refresh, logout, logoutAll } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/auth.js';
-import redis from '../lib/redis.js';
+import redis, { safeSendCommand } from '../lib/redis.js';
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
-    sendCommand: (...args) => redis.call(...args),
+    sendCommand: (...args) => safeSendCommand(...args),
   }),
 });
 
