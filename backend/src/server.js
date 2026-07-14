@@ -52,13 +52,17 @@ const allowedOrigins = corsOriginsEnv
   ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
   : [];
 
-// Dynamic connectSrc origins for Helmet CSP
-const helmetConnectSrc = ["'self'", "http://localhost:5173", "https://*.vercel.app"];
+// Dynamic connectSrc origins for Helmet CSP — derived from configuration,
+// not hardcoded, so future deployments work without code changes.
+const helmetConnectSrc = new Set(["'self'", "http://localhost:5173", "https://*.vercel.app"]);
 allowedOrigins.forEach((origin) => {
-  if (origin !== '*') {
-    helmetConnectSrc.push(origin);
+  if (origin && origin !== '*') {
+    helmetConnectSrc.add(origin);
   }
 });
+if (process.env.BACKEND_URL) {
+  helmetConnectSrc.add(process.env.BACKEND_URL);
+}
 
 // Security headers with Helmet
 app.use(helmet({
@@ -68,7 +72,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: helmetConnectSrc,
+      connectSrc: [...helmetConnectSrc],
     },
   },
 }));
@@ -82,10 +86,14 @@ const corsOptions = {
     }
 
     const isExactMatch = allowedOrigins.includes(origin) || origin === 'http://localhost:5173';
-    const isVercelPreview = origin.startsWith('https://') && origin.endsWith('.vercel.app');
+    // Support Vercel production and preview deployments (e.g. my-app.vercel.app, my-app-abc123.vercel.app)
+    const isVercelDeploy = /^https:\/\/[\w-]+\.vercel\.app$/.test(origin);
 
-    if (isExactMatch || isVercelPreview) {
-      callback(null, true);
+    if (isExactMatch || isVercelDeploy) {
+      // Use the explicit requesting origin rather than `true` so the
+      // Access-Control-Allow-Origin header clearly reflects the caller.
+      // This is clearer and avoids ambiguity when credentials are enabled.
+      callback(null, origin);
     } else {
       logger.warn(`CORS blocked for origin: ${origin}`);
       callback(new Error(`Not allowed by CORS: ${origin}`));
@@ -143,7 +151,15 @@ const bookingLimiter = rateLimit({
 });
 
 // Health/observability endpoints
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => res.json({
+  status: 'ok',
+  environment: process.env.NODE_ENV || 'unset',
+  renderDetected: process.env.RENDER === 'true',
+  commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'unknown',
+  apiVersion: 'v1',
+  uptime: Math.floor(process.uptime()),
+  corsOrigins: allowedOrigins.length,
+}));
 app.get('/ready', (req, res) => res.json({ status: 'ready' }));
 app.get('/live', (req, res) => res.json({ status: 'alive' }));
 
@@ -182,5 +198,12 @@ if (!Number.isInteger(PORT) || PORT <= 0) {
 
 app.listen(PORT, '0.0.0.0', async () => {
   logger.info(`Travel booking API listening on :${PORT}`);
+  logger.info({
+    NODE_ENV: process.env.NODE_ENV,
+    RENDER: process.env.RENDER,
+    isProdOrRender,
+    allowedOrigins,
+    commit: process.env.RENDER_GIT_COMMIT || 'unknown',
+  }, 'Environment config');
   await startHoldWorker();
 });

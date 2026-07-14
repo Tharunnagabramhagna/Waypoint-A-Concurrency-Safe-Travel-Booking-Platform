@@ -2,6 +2,10 @@ const DEFAULT_API_BASE_URL = 'https://waypoint-backend-ahsd.onrender.com';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL;
 const API_URL = API_BASE.includes('/api/v1') ? API_BASE : `${API_BASE.replace(/\/$/, '')}/api/v1`;
 
+if (typeof window !== 'undefined') {
+  console.log('[Waypoint] API endpoint:', API_URL);
+}
+
 let csrfToken = null;
 
 async function getCsrfToken() {
