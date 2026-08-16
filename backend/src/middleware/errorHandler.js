@@ -17,6 +17,11 @@ export function errorHandler(err, req, res, next) {
   ) {
     return res.status(403).json({ error: 'Invalid or missing CSRF token', code: 'INVALID_CSRF' });
   }
+  // Zod validation errors -> surface as a 400 with clean message
+  if (err.name === 'ZodError' || err.errors) {
+    const firstMessage = err.errors?.[0]?.message || 'Invalid input data';
+    return res.status(400).json({ error: firstMessage, code: 'VALIDATION_ERROR' });
+  }
   // Postgres unique_violation -> surfaces as a 409, not a 500.
   if (err.code === '23505') {
     return res.status(409).json({ error: 'Conflict: resource already exists or was just taken', code: 'CONFLICT' });

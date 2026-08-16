@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import PasswordInput from '../components/PasswordInput.jsx';
+import { validatePassword } from '../utils/passwordPolicy.js';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -44,8 +45,9 @@ export default function ResetPassword() {
     e.preventDefault();
     setError(null);
 
-    if (form.newPassword.length < 8) {
-      setError('Password must be at least 8 characters long.');
+    const pwdValidation = validatePassword(form.newPassword);
+    if (!pwdValidation.valid) {
+      setError(pwdValidation.message);
       return;
     }
 

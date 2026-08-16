@@ -118,6 +118,8 @@ async function request(path, { method = 'GET', body, headers = {} } = {}, isRetr
 }
 
 export const api = {
+  sendEmailOtp: (email) => request('/auth/send-email-otp', { method: 'POST', body: { email } }),
+  verifyEmailOtp: (email, otp) => request('/auth/verify-email-otp', { method: 'POST', body: { email, otp } }),
   register: (body) => request('/auth/register', { method: 'POST', body }),
   login: (body) => request('/auth/login', { method: 'POST', body }),
   forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email } }),

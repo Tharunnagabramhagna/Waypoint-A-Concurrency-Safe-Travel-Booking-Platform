@@ -116,6 +116,40 @@ npm install
 npm run dev             # → http://localhost:5173
 ```
 
+## 📧 Email Configuration
+
+Waypoint uses a production-grade 6-digit OTP email verification flow during user registration. Outbound email dispatch is delivered via the official **Google Gmail API** SDK (`googleapis`) with server-to-server OAuth 2.0 offline authorization, or an automated development console fallback.
+
+### Required Environment Variables (`backend/.env`)
+
+| Variable | Description | Example |
+|---|---|---|
+| `GOOGLE_GMAIL_CLIENT_ID` | Google Cloud OAuth 2.0 Client ID | `123456789.apps.googleusercontent.com` |
+| `GOOGLE_GMAIL_CLIENT_SECRET` | Google Cloud OAuth 2.0 Client Secret | `GOCSPX-...` |
+| `GOOGLE_GMAIL_REDIRECT_URI` | Authorized Redirect URI | `http://localhost:4000/api/v1/auth/gmail/callback` |
+| `GOOGLE_GMAIL_SENDER` | Waypoint sender Gmail address | `waypoint.sender@gmail.com` |
+| `GOOGLE_GMAIL_REFRESH_TOKEN` | OAuth 2.0 Refresh Token for Gmail sender | `1//04...` |
+
+### Setting up Gmail API for OTP Delivery
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), enable the **Gmail API**.
+2. Create OAuth 2.0 Client credentials (Web application) with Authorized Redirect URI: `http://localhost:4000/api/v1/auth/gmail/callback`.
+3. Add `GOOGLE_GMAIL_CLIENT_ID`, `GOOGLE_GMAIL_CLIENT_SECRET`, and `GOOGLE_GMAIL_SENDER` to `backend/.env`.
+4. Start your backend and navigate to `http://localhost:4000/api/v1/auth/gmail/authorize` in your browser.
+5. Authorize with your designated Waypoint sender Gmail account (`https://www.googleapis.com/auth/gmail.send`).
+6. Copy the returned refresh token into `GOOGLE_GMAIL_REFRESH_TOKEN` in `backend/.env` and restart the backend.
+
+### Local Development vs Production
+
+- **Local Development (`NODE_ENV=development`)**:
+  - If Gmail API is configured, emails are dispatched live in real-time to any recipient via Gmail API.
+  - If Gmail API is unconfigured, the backend logs a warning on startup and prints the 6-digit OTP code directly to the backend terminal console for seamless local development.
+- **Production Deployment (`NODE_ENV=production`)**:
+  - Gmail API sender configuration and refresh token are mandatory.
+  - If unconfigured or delivery fails, the server fails loudly with fatal logs and rejects requests safely. Console fallback is strictly disabled in production.
+
+
+
 ## 🏗 Architecture
 
 ```

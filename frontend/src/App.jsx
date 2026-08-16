@@ -1,4 +1,5 @@
-import { Routes, Route } from 'react-router-dom';
+import { useState } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import Home from './pages/Home.jsx';
@@ -17,30 +18,49 @@ import Services from './pages/Services.jsx';
 import Contact from './pages/Contact.jsx';
 
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import SplashScreen from './components/splash/SplashScreen.jsx';
+
+const AUTH_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
 
 export default function App() {
+  const location = useLocation();
+  const isAuthPage = AUTH_PATHS.includes(location.pathname);
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-10">
+      {/* Startup Splash Animation */}
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+
+      {!isAuthPage && <Navbar />}
+
+      {isAuthPage ? (
+        /* Auth pages render full-bleed — no constrained container */
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/search" element={<SearchResults />} />
-          <Route path="/listings/:id" element={<ListingDetail />} />
-          <Route path="/checkout/:bookingId" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
-          <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
-          <Route path="/tracking/:bookingId" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
-          <Route path="/explore" element={<ExplorePage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/contact" element={<Contact />} />
         </Routes>
-      </main>
-      <Footer />
+      ) : (
+        <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-10">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/search" element={<SearchResults />} />
+            <Route path="/listings/:id" element={<ListingDetail />} />
+            <Route path="/checkout/:bookingId" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+            <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+            <Route path="/tracking/:bookingId" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
+            <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/contact" element={<Contact />} />
+          </Routes>
+        </main>
+      )}
+
+      {!isAuthPage && <Footer />}
     </div>
   );
 }
+

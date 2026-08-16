@@ -16,7 +16,10 @@ import bookingsRoutes from './routes/bookings.routes.js';
 import paymentsRoutes from './routes/payments.routes.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { startHoldWorker } from './queues/holdQueue.js';
+import { startOtpCleanupWorker } from './jobs/unverifiedCleanupWorker.js';
 import logger from './lib/logger.js';
+import { initPassport } from './lib/passport.js';
+import { initEmailVerification } from './services/emailService.js';
 
 dotenv.config();
 
@@ -85,7 +88,8 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    const isExactMatch = allowedOrigins.includes(origin) || origin === 'http://localhost:5173';
+    const isLocalhost = !isProduction && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const isExactMatch = allowedOrigins.includes(origin) || origin === 'http://localhost:5173' || isLocalhost;
     // Support Vercel production and preview deployments (e.g. my-app.vercel.app, my-app-abc123.vercel.app)
     const isVercelDeploy = /^https:\/\/[\w-]+\.vercel\.app$/.test(origin);
 
@@ -108,6 +112,9 @@ app.use(cookieParser());
 app.use(express.json());
 
 const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
+// Initialize Passport for OAuth (stateless — no sessions)
+initPassport(app);
 
 // CSRF Protection
 const {
@@ -206,5 +213,8 @@ app.listen(PORT, '0.0.0.0', async () => {
     commit: process.env.RENDER_GIT_COMMIT || 'unknown',
   }, 'Environment config');
   await waitForRedis(3000);
-  await startHoldWorker();
+  await initEmailVerification();
+  // Start background workers
+  startHoldWorker();
+  startOtpCleanupWorker();
 });

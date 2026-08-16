@@ -39,7 +39,8 @@ export function AuthProvider({ children }) {
 
   async function register(data) {
     const registerRes = await api.register(data);
-    setUser(registerRes.user);
+    // New OTP flow: account created but user is NOT logged in
+    // User must sign in via the Login page
     return registerRes;
   }
 

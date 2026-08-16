@@ -6,11 +6,66 @@ import { pool, withTransaction } from '../db/pool.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../lib/logger.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
+import { getGmailAuthUrl, exchangeGmailAuthCode } from '../services/gmailService.js';
+import {
+  sendEmailOtp as sendOtpService,
+  verifyEmailOtp as verifyOtpService,
+  validateOtpSession,
+} from '../services/emailOtpService.js';
 
 const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase());
+
+const COMMON_PASSWORDS = new Set([
+  'password',
+  'password123',
+  '12345678',
+  '123456789',
+  'qwerty123',
+  'admin123',
+  'letmein123',
+  'waypoint123',
+]);
+
+export function validatePassword(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Password is required' };
+  }
+  if (password.length < 8) {
+    return { valid: false, message: 'Password must be at least 8 characters' };
+  }
+  if (password.length > 128) {
+    return { valid: false, message: 'Password must be 128 characters or fewer' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one number' };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special character' };
+  }
+  if (COMMON_PASSWORDS.has(password.toLowerCase().trim())) {
+    return { valid: false, message: 'Password is too common and easily guessed' };
+  }
+  return { valid: true };
+}
+
 const passwordSchema = z.string()
   .min(8, 'Password must be at least 8 characters')
-  .max(128, 'Password must be 128 characters or fewer');
+  .max(128, 'Password must be 128 characters or fewer')
+  .superRefine((val, ctx) => {
+    const res = validatePassword(val);
+    if (!res.valid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: res.message,
+      });
+    }
+  });
 
 const registerSchema = z.object({
   email: emailSchema,
@@ -25,11 +80,11 @@ const loginSchema = z.object({
   deviceInfo: z.string().trim().max(255).optional(),
 });
 
-function generateRefreshToken() {
+export function generateRefreshToken() {
   return randomBytes(64).toString('hex');
 }
 
-function signAccessToken(user) {
+export function signAccessToken(user) {
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email },
     process.env.JWT_ACCESS_SECRET,
@@ -37,15 +92,15 @@ function signAccessToken(user) {
   );
 }
 
-function signRefreshToken() {
+export function signRefreshToken(user) {
   return jwt.sign(
-    {},
+    { sub: user ? user.id : undefined },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
   );
 }
 
-function setAuthCookies(res, accessToken, refreshToken) {
+export function setAuthCookies(res, accessToken, refreshToken) {
   const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
   
   res.cookie('access-token', accessToken, {
@@ -65,7 +120,7 @@ function setAuthCookies(res, accessToken, refreshToken) {
   });
 }
 
-function clearAuthCookies(res) {
+export function clearAuthCookies(res) {
   const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
   res.clearCookie('access-token', { 
     path: '/',
@@ -79,47 +134,132 @@ function clearAuthCookies(res) {
     secure: isProdOrRender,
     sameSite: isProdOrRender ? 'none' : 'lax'
   });
+  res.clearCookie('csrf-token', { 
+    path: '/',
+    httpOnly: true,
+    secure: isProdOrRender,
+    sameSite: isProdOrRender ? 'none' : 'lax'
+  });
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OTP Endpoints
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function sendEmailOtp(req, res, next) {
+  try {
+    const { email } = req.body;
+    if (!email) throw new AppError(400, 'Email address is required.', 'VALIDATION');
+    const parsed = emailSchema.parse(email);
+    const result = await sendOtpService(parsed);
+    res.json(result);
+  } catch (err) {
+    logger.error(err, 'Send email OTP failed');
+    if (err.code === 'OTP_COOLDOWN') {
+      if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
+      return next(err);
+    }
+    if (err.issues) return next(new AppError(400, err.issues[0].message, 'VALIDATION'));
+    next(err);
+  }
+}
+
+export async function verifyEmailOtp(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) throw new AppError(400, 'Email and verification code are required.', 'VALIDATION');
+
+    const result = await verifyOtpService(email, otp);
+
+    // Set OTP verification session as HttpOnly cookie (10 min TTL)
+    const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+    res.cookie('otp-session', result.otpSessionToken, {
+      httpOnly: true,
+      secure: isProdOrRender,
+      sameSite: isProdOrRender ? 'none' : 'lax',
+      path: '/',
+      maxAge: 10 * 60 * 1000, // 10 minutes
+    });
+
+    res.json({ verified: true });
+  } catch (err) {
+    logger.error(err, 'Verify email OTP failed');
+    next(err);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Register (requires OTP verification session)
+// ──────────────────────────────────────────────────────────────────────────────
 
 export async function register(req, res, next) {
   try {
     const data = registerSchema.parse(req.body);
+
+    // 1. Validate OTP verification session (from HttpOnly cookie)
+    const otpSessionToken = req.cookies['otp-session'];
+    const verifiedEmail = validateOtpSession(otpSessionToken);
+
+    // 2. Ensure the email in the form matches the verified email
+    if (data.email !== verifiedEmail) {
+      throw new AppError(403, 'Email does not match verified email. Please verify your email again.', 'EMAIL_MISMATCH');
+    }
+
+    // 3. Create user account with email_verified = true
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    const result = await withTransaction(async (client) => {
-      const { rows } = await client.query(
-        `INSERT INTO users (email, password_hash, full_name, phone)
-         VALUES ($1, $2, $3, $4)
+    const user = await withTransaction(async (client) => {
+      // Check if verified user already exists
+      const { rows: existing } = await client.query(
+        `SELECT id, email_verified FROM users WHERE email = $1 FOR UPDATE`,
+        [data.email]
+      );
+      if (existing.length > 0 && existing[0].email_verified) {
+        throw new AppError(409, 'An account with this email already exists. Please sign in.', 'EMAIL_TAKEN');
+      }
+      // If unverified user exists (from old flow), delete it
+      if (existing.length > 0) {
+        await client.query(`DELETE FROM users WHERE id = $1`, [existing[0].id]);
+      }
+
+      const { rows: newUserRows } = await client.query(
+        `INSERT INTO users (email, password_hash, full_name, phone, email_verified, auth_provider)
+         VALUES ($1, $2, $3, $4, true, 'local')
          RETURNING id, email, full_name, role, created_at`,
         [data.email, passwordHash, data.fullName, data.phone || null]
       );
-      return rows[0];
+
+      return newUserRows[0];
     });
 
-    const user = result;
-    const accessToken = signAccessToken(user);
-    const refreshToken = signRefreshToken();
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
+    // 4. Clear OTP session cookie (single-use)
+    const isProdOrRender = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+    res.clearCookie('otp-session', {
+      path: '/',
+      httpOnly: true,
+      secure: isProdOrRender,
+      sameSite: isProdOrRender ? 'none' : 'lax',
+    });
 
-    // Store refresh token in DB
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await pool.query(
-      `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, device_info)
-       VALUES ($1, $2, $3, $4)`,
-      [user.id, refreshTokenHash, expiresAt, req.body.deviceInfo || null]
-    );
-
-    setAuthCookies(res, accessToken, refreshToken);
-    res.status(201).json({ 
-      user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role } 
+    // 5. Do NOT issue JWTs — redirect user to login page
+    logger.info({ userId: user.id, email: user.email }, '[Register] Account created successfully');
+    res.status(201).json({
+      message: 'Account created successfully. Please sign in.',
+      email: user.email,
     });
   } catch (err) {
     logger.error(err, 'Registration failed');
     if (err.issues) return next(new AppError(400, err.issues[0].message, 'VALIDATION'));
-    if (err.code === '23505') return next(new AppError(409, 'Email already registered', 'EMAIL_TAKEN'));
+    if (err.code === 'EMAIL_TAKEN' || err.code === '23505') {
+      return next(new AppError(409, 'An account with this email already exists. Please sign in.', 'EMAIL_TAKEN'));
+    }
     next(err);
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Login
+// ──────────────────────────────────────────────────────────────────────────────
 
 export async function login(req, res, next) {
   try {
@@ -128,11 +268,21 @@ export async function login(req, res, next) {
     const user = rows[0];
     if (!user) throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
 
+    // Guard: OAuth-only users have no password_hash — reject email/password login
+    if (!user.password_hash) {
+      throw new AppError(401, 'This account uses social login. Please sign in with Google or Facebook.', 'OAUTH_ONLY_ACCOUNT');
+    }
+
+    // Guard: Unverified users cannot sign in
+    if (!user.email_verified) {
+      throw new AppError(403, 'Please verify your email address before signing in.', 'EMAIL_NOT_VERIFIED');
+    }
+
     const ok = await bcrypt.compare(data.password, user.password_hash);
     if (!ok) throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
 
     const accessToken = signAccessToken(user);
-    const refreshToken = signRefreshToken();
+    const refreshToken = signRefreshToken(user);
     const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
 
     // Store refresh token in DB
@@ -234,20 +384,16 @@ export async function logout(req, res, next) {
   try {
     const refreshToken = req.cookies['refresh-token'];
     if (refreshToken) {
-      // Revoke the refresh token
-      const { rows } = await pool.query(
-        `SELECT id, token_hash FROM refresh_tokens WHERE expires_at > NOW() AND revoked_at IS NULL`
-      );
-      
-      for (const row of rows) {
-        const match = await bcrypt.compare(refreshToken, row.token_hash);
-        if (match) {
+      try {
+        const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        if (payload && payload.sub) {
           await pool.query(
-            `UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`,
-            [row.id]
+            `UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+            [payload.sub]
           );
-          break;
         }
+      } catch (jwtErr) {
+        // If JWT invalid or expired, continue to clear cookies
       }
     }
 
@@ -255,7 +401,8 @@ export async function logout(req, res, next) {
     res.json({ message: 'Logged out successfully' });
   } catch (err) {
     logger.error(err, 'Logout failed');
-    next(err);
+    clearAuthCookies(res);
+    res.json({ message: 'Logged out successfully' });
   }
 }
 
@@ -300,7 +447,7 @@ const resetPasswordSchema = z.object({
 export async function forgotPassword(req, res, next) {
   try {
     const data = forgotPasswordSchema.parse(req.body);
-    const { rows } = await pool.query(`SELECT id, email, full_name FROM users WHERE email = $1`, [data.email]);
+    const { rows } = await pool.query(`SELECT id, email, full_name, email_verified FROM users WHERE email = $1`, [data.email]);
     const user = rows[0];
 
     // Generic success response regardless of email existence to prevent email enumeration
@@ -308,8 +455,9 @@ export async function forgotPassword(req, res, next) {
       message: 'If an account with that email exists, a password reset link has been sent.',
     };
 
-    if (!user) {
-      logger.info({ email: data.email }, '[ForgotPassword] Email not found — returning generic success');
+    // Only allow password reset for verified accounts
+    if (!user || !user.email_verified) {
+      logger.info({ email: data.email }, '[ForgotPassword] Email not found or unverified — returning generic success');
       return res.json(genericResponse);
     }
 
@@ -419,6 +567,84 @@ export async function resetPassword(req, res, next) {
   } catch (err) {
     logger.error(err, 'Reset password failed');
     if (err.issues) return next(new AppError(400, err.issues[0].message, 'VALIDATION'));
+    next(err);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Gmail API Authorization Endpoints (Admin / Setup)
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function authorizeGmail(req, res, next) {
+  try {
+    const authUrl = getGmailAuthUrl();
+    res.redirect(authUrl);
+  } catch (err) {
+    logger.error(err, '[Gmail Auth] Failed to generate authorization URL');
+    next(err);
+  }
+}
+
+export async function handleGmailCallback(req, res, next) {
+  try {
+    const { code, error } = req.query;
+
+    if (error) {
+      logger.error({ error }, '[Gmail Auth] Google returned authorization error');
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head><title>Gmail Authorization Failed</title><style>body{font-family:sans-serif;padding:40px;background:#fef2f2;color:#991b1b;}</style></head>
+          <body>
+            <h2>Gmail Authorization Failed</h2>
+            <p>Google OAuth error: ${error}</p>
+          </body>
+        </html>
+      `);
+    }
+
+    if (!code) {
+      throw new AppError(400, 'Authorization code missing in callback request', 'MISSING_CODE');
+    }
+
+    const tokens = await exchangeGmailAuthCode(code);
+    logger.info('[Gmail Auth] Gmail sender authorization completed successfully.');
+
+    const hasRefreshToken = Boolean(tokens?.refresh_token);
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Waypoint — Gmail API Authorization</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; padding: 40px; }
+            .card { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+            h2 { color: #059669; margin-top: 0; }
+            code { background: #f1f5f9; padding: 6px 10px; border-radius: 6px; font-size: 13px; word-break: break-all; display: block; margin: 12px 0; }
+            .box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 20px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h2>✓ Gmail Sender Authorization Successful</h2>
+            <div class="box">
+              <p style="margin:0;color:#166534;font-weight:600;">Google authorization completed successfully.</p>
+            </div>
+            ${hasRefreshToken ? `
+              <p>A new <strong>refresh token</strong> was obtained from Google.</p>
+              <p>Add it to your <code>backend/.env</code> file:</p>
+              <code>GOOGLE_GMAIL_REFRESH_TOKEN=${tokens.refresh_token}</code>
+              <p style="color:#64748b;font-size:13px;">After updating <code>.env</code>, restart your backend server to enable live Gmail API OTP delivery.</p>
+            ` : `
+              <p>Google returned an access token. If you did not receive a new refresh token, offline consent was previously granted. You can use your existing <code>GOOGLE_GMAIL_REFRESH_TOKEN</code> in <code>.env</code>.</p>
+            `}
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    logger.error(err, '[Gmail Auth] Failed to exchange authorization code for tokens');
     next(err);
   }
 }

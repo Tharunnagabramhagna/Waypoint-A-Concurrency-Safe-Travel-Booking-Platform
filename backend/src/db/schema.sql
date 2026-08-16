@@ -11,10 +11,15 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 CREATE TABLE IF NOT EXISTS users (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email          CITEXT UNIQUE NOT NULL,
-  password_hash  TEXT NOT NULL,
+  password_hash  TEXT,                -- NULL for OAuth-only users
   full_name      TEXT NOT NULL,
   phone          TEXT,
   role           TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer','provider_admin','platform_admin')),
+  auth_provider  TEXT NOT NULL DEFAULT 'local',  -- 'local', 'google', 'facebook'
+  google_id      TEXT UNIQUE,
+  facebook_id    TEXT UNIQUE,
+  avatar_url     TEXT,
+  email_verified BOOLEAN NOT NULL DEFAULT false,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -173,4 +178,34 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens (user_id);
+
+-- ---------- EMAIL VERIFICATION TOKENS ----------
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  used_at      TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_hash ON email_verification_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user ON email_verification_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_expires ON email_verification_tokens (expires_at);
+
+-- ---------- EMAIL OTPs (for registration verification) ----------
+CREATE TABLE IF NOT EXISTS email_otps (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email        CITEXT NOT NULL,
+  otp_hash     TEXT NOT NULL,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'verified', 'expired', 'failed')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps (email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_otps_expires ON email_otps (expires_at);
+CREATE INDEX IF NOT EXISTS idx_email_otps_status ON email_otps (status, expires_at);
 
