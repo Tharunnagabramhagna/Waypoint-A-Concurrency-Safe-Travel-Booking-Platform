@@ -1,10 +1,11 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { pool, withTransaction } from '../db/pool.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../lib/logger.js';
+import { sendPasswordResetEmail } from '../services/emailService.js';
 
 const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase());
 const passwordSchema = z.string()
@@ -286,3 +287,139 @@ export async function me(req, res, next) {
     next(err);
   }
 }
+
+const forgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+export async function forgotPassword(req, res, next) {
+  try {
+    const data = forgotPasswordSchema.parse(req.body);
+    const { rows } = await pool.query(`SELECT id, email, full_name FROM users WHERE email = $1`, [data.email]);
+    const user = rows[0];
+
+    // Generic success response regardless of email existence to prevent email enumeration
+    const genericResponse = {
+      message: 'If an account with that email exists, a password reset link has been sent.',
+    };
+
+    if (!user) {
+      logger.info({ email: data.email }, '[ForgotPassword] Email not found — returning generic success');
+      return res.json(genericResponse);
+    }
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour validity
+
+    await withTransaction(async (client) => {
+      // Invalidate previous unused reset tokens for this user
+      await client.query(
+        `UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL`,
+        [user.id]
+      );
+
+      // Insert new token
+      await client.query(
+        `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+        [user.id, tokenHash, expiresAt]
+      );
+    });
+
+    // Send email (or log link if SMTP unconfigured)
+    await sendPasswordResetEmail({
+      toEmail: user.email,
+      resetToken: rawToken,
+      userFullName: user.full_name,
+    });
+
+    res.json(genericResponse);
+  } catch (err) {
+    logger.error(err, 'Forgot password request failed');
+    if (err.issues) return next(new AppError(400, err.issues[0].message, 'VALIDATION'));
+    next(err);
+  }
+}
+
+export async function verifyResetToken(req, res, next) {
+  try {
+    const token = req.query.token;
+    if (!token || typeof token !== 'string') {
+      throw new AppError(400, 'Reset token is required', 'VALIDATION');
+    }
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const { rows } = await pool.query(
+      `SELECT prt.id, prt.expires_at, prt.used_at, u.email
+       FROM password_reset_tokens prt
+       JOIN users u ON prt.user_id = u.id
+       WHERE prt.token_hash = $1 AND prt.used_at IS NULL AND prt.expires_at > NOW()`,
+      [tokenHash]
+    );
+
+    if (!rows[0]) {
+      throw new AppError(400, 'Invalid or expired password reset token', 'INVALID_TOKEN');
+    }
+
+    res.json({ valid: true, email: rows[0].email });
+  } catch (err) {
+    logger.error(err, 'Verify reset token failed');
+    next(err);
+  }
+}
+
+export async function resetPassword(req, res, next) {
+  try {
+    const data = resetPasswordSchema.parse(req.body);
+    const tokenHash = createHash('sha256').update(data.token).digest('hex');
+
+    await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `SELECT prt.id AS token_id, prt.user_id, prt.expires_at, prt.used_at, u.email
+         FROM password_reset_tokens prt
+         JOIN users u ON prt.user_id = u.id
+         WHERE prt.token_hash = $1 AND prt.used_at IS NULL AND prt.expires_at > NOW()
+         FOR UPDATE`,
+        [tokenHash]
+      );
+
+      const tokenRecord = rows[0];
+      if (!tokenRecord) {
+        throw new AppError(400, 'Invalid or expired password reset token', 'INVALID_TOKEN');
+      }
+
+      const passwordHash = await bcrypt.hash(data.newPassword, 12);
+
+      // 1. Update user's password
+      await client.query(
+        `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+        [passwordHash, tokenRecord.user_id]
+      );
+
+      // 2. Mark reset token as used
+      await client.query(
+        `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`,
+        [tokenRecord.token_id]
+      );
+
+      // 3. Invalidate ALL active refresh tokens/sessions for security
+      await client.query(
+        `UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+        [tokenRecord.user_id]
+      );
+    });
+
+    clearAuthCookies(res);
+    res.json({ message: 'Password reset successful. Please sign in with your new password.' });
+  } catch (err) {
+    logger.error(err, 'Reset password failed');
+    if (err.issues) return next(new AppError(400, err.issues[0].message, 'VALIDATION'));
+    next(err);
+  }
+}
+

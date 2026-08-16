@@ -10,9 +10,13 @@ import TrackingPage from './pages/TrackingPage.jsx';
 import ExplorePage from './pages/ExplorePage.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import About from './pages/About.jsx';
 import Services from './pages/Services.jsx';
 import Contact from './pages/Contact.jsx';
+
+import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 export default function App() {
   return (
@@ -23,12 +27,14 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchResults />} />
           <Route path="/listings/:id" element={<ListingDetail />} />
-          <Route path="/checkout/:bookingId" element={<Checkout />} />
-          <Route path="/bookings" element={<MyBookings />} />
-          <Route path="/tracking/:bookingId" element={<TrackingPage />} />
+          <Route path="/checkout/:bookingId" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+          <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+          <Route path="/tracking/:bookingId" element={<ProtectedRoute><TrackingPage /></ProtectedRoute>} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/about" element={<About />} />
           <Route path="/services" element={<Services />} />
           <Route path="/contact" element={<Contact />} />

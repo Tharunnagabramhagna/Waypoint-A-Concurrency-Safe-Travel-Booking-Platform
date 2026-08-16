@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
+import PasswordInput from '../components/PasswordInput.jsx';
+
 export default function Register() {
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '' });
   const [error, setError] = useState(null);
@@ -69,17 +71,13 @@ export default function Register() {
             />
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Password</label>
-            <input
-              type="password"
-              required
-              placeholder="••••••••"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="input-glass"
-            />
-          </div>
+          <PasswordInput
+            id="register-password"
+            name="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            autoComplete="new-password"
+          />
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 

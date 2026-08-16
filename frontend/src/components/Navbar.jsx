@@ -128,7 +128,7 @@ export default function Navbar() {
             {user ? (
               <>
                 <span className="text-body-sm font-semibold text-ink/70 mr-1 select-none">
-                  Hi, {user.name || user.email.split('@')[0]}
+                  Hi, {user.fullName || user.full_name || user.name || user.email.split('@')[0]}
                 </span>
                 <button
                   onClick={handleLogout}

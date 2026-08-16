@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
-import { register, login, me, refresh, logout, logoutAll } from '../controllers/authController.js';
+import { register, login, me, refresh, logout, logoutAll, forgotPassword, verifyResetToken, resetPassword } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/auth.js';
 import redis, { safeSendCommand } from '../lib/redis.js';
 
@@ -20,6 +20,9 @@ const authLimiter = rateLimit({
 
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
+router.post('/forgot-password', authLimiter, forgotPassword);
+router.get('/verify-reset-token', verifyResetToken);
+router.post('/reset-password', authLimiter, resetPassword);
 router.post('/refresh', refresh);
 router.post('/logout', logout);
 router.post('/logout-all', requireAuth, logoutAll);

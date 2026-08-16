@@ -162,3 +162,15 @@ CREATE TABLE IF NOT EXISTS vehicle_position_log (
 
 CREATE INDEX IF NOT EXISTS idx_vehicle_position_log_listing_time ON vehicle_position_log (listing_id, recorded_at);
 
+-- ---------- PASSWORD RESET TOKENS ----------
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  used_at      TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens (user_id);
+

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
+import PasswordInput from '../components/PasswordInput.jsx';
+
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
@@ -47,17 +49,18 @@ export default function Login() {
             />
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Password</label>
-            <input
-              type="password"
-              required
-              placeholder="••••••••"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="input-glass"
-            />
-          </div>
+          <PasswordInput
+            id="password"
+            name="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            autoComplete="current-password"
+            labelRight={
+              <Link to="/forgot-password" className="text-blue-600 font-semibold hover:underline">
+                Forgot Password?
+              </Link>
+            }
+          />
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 

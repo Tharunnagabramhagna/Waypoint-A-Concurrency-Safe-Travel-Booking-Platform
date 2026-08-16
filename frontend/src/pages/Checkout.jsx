@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { api } from '../api/client.js';
+import { api, newIdempotencyKey } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
 function formatMoney(cents, currency) {
@@ -16,7 +16,7 @@ export default function Checkout() {
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState(null);
 
-  const idempotencyKey = location.state?.idempotencyKey;
+  const [idempotencyKey] = useState(() => location.state?.idempotencyKey || newIdempotencyKey());
 
   async function pay(e) {
     e.preventDefault();

@@ -8,7 +8,7 @@ import { doubleCsrf } from 'csrf-csrf';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import RedisStore from 'rate-limit-redis';
-import { safeSendCommand } from './lib/redis.js';
+import { safeSendCommand, waitForRedis } from './lib/redis.js';
 
 import authRoutes from './routes/auth.routes.js';
 import listingsRoutes from './routes/listings.routes.js';
@@ -116,7 +116,7 @@ const {
   invalidCsrfTokenError
 } = doubleCsrf({
   getSecret: () => process.env.CSRF_SECRET || (isProduction ? '' : 'fallback-secret-change-in-production'),
-  getSessionIdentifier: (req) => req.cookies['access-token'] || '',
+  getSessionIdentifier: () => '',
   cookieName: 'csrf-token',
   cookieOptions: {
     httpOnly: true,
@@ -205,5 +205,6 @@ app.listen(PORT, '0.0.0.0', async () => {
     allowedOrigins,
     commit: process.env.RENDER_GIT_COMMIT || 'unknown',
   }, 'Environment config');
+  await waitForRedis(3000);
   await startHoldWorker();
 });
