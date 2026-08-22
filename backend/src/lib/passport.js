@@ -119,12 +119,48 @@ export function initPassport(app) {
 }
 
 /**
- * Build the callback URL for a provider.
- * Uses BACKEND_URL env var in production, otherwise constructs from PORT.
+ * Resolves and normalizes the backend base URL.
+ * - Prefers explicit BACKEND_URL.
+ * - Falls back to RENDER_EXTERNAL_URL or RENDER_EXTERNAL_HOSTNAME on Render.
+ * - Falls back to http://localhost:<PORT> for local development.
+ * - Sanitizes duplicate protocols (e.g. https://https://) and trailing slashes.
  */
-function getCallbackUrl(provider) {
-  const backendUrl = process.env.BACKEND_URL ||
-    (process.env.RENDER_EXTERNAL_URL ? `https://${process.env.RENDER_EXTERNAL_URL}` : null) ||
-    `http://localhost:${process.env.PORT || 4000}`;
-  return `${backendUrl}/api/v1/auth/${provider}/callback`;
+export function getBackendBaseUrl() {
+  let rawUrl = (process.env.BACKEND_URL || '').trim();
+
+  if (!rawUrl && process.env.RENDER_EXTERNAL_URL) {
+    rawUrl = process.env.RENDER_EXTERNAL_URL.trim();
+  }
+
+  if (!rawUrl && process.env.RENDER_EXTERNAL_HOSTNAME) {
+    rawUrl = process.env.RENDER_EXTERNAL_HOSTNAME.trim();
+  }
+
+  if (rawUrl) {
+    // 1. Remove duplicate or concatenated protocols (e.g. "https://https://", "http://https://")
+    let cleaned = rawUrl.replace(/^(https?:\/\/)+/i, (match) => {
+      return match.toLowerCase().startsWith('http://') && !match.toLowerCase().includes('https://') ? 'http://' : 'https://';
+    });
+
+    // 2. If protocol is completely missing, prepend https:// (or http:// for localhost/127.0.0.1)
+    if (!/^https?:\/\//i.test(cleaned)) {
+      const isLocal = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleaned);
+      cleaned = `${isLocal ? 'http' : 'https'}://${cleaned}`;
+    }
+
+    // 3. Strip any trailing slashes
+    return cleaned.replace(/\/+$/, '');
+  }
+
+  const port = process.env.PORT || 4000;
+  return `http://localhost:${port}`;
+}
+
+/**
+ * Build the callback URL for an OAuth provider.
+ * Guarantees exactly one protocol and clean single-slash path structure.
+ */
+export function getCallbackUrl(provider) {
+  const baseUrl = getBackendBaseUrl();
+  return `${baseUrl}/api/v1/auth/${provider}/callback`;
 }

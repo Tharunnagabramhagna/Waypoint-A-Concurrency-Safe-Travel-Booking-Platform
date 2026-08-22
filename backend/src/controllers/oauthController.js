@@ -121,15 +121,19 @@ export async function handleOAuthCallback(req, res) {
  * In development → localhost:5173, in production → first CORS_ORIGIN.
  */
 function getFrontendUrl() {
-  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
+  let url = (process.env.FRONTEND_URL || '').trim();
+  if (url) {
+    return url.replace(/\/+$/, '');
+  }
   const corsOrigins = process.env.CORS_ORIGIN || '';
   const origins = corsOrigins.split(',').map(o => o.trim()).filter(Boolean);
   // Prefer the non-localhost origin in production, otherwise first origin
   if (process.env.NODE_ENV === 'production') {
     const prodOrigin = origins.find(o => !o.includes('localhost'));
-    if (prodOrigin) return prodOrigin;
+    if (prodOrigin) return prodOrigin.replace(/\/+$/, '');
   }
-  return origins[0] || 'http://localhost:5173';
+  const fallback = origins[0] || 'http://localhost:5173';
+  return fallback.replace(/\/+$/, '');
 }
 
 export { findOrCreateOAuthUser, getFrontendUrl };
